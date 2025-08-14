@@ -1,0 +1,198 @@
+# scrapers/elpatron.py
+# Actualizado: maneja categorías en BD, guarda provider y category_id
+
+import os
+import re
+import json
+import time
+import requests
+from datetime import datetime
+from urllib.parse import urljoin, urlparse
+from bs4 import BeautifulSoup
+
+from sqlalchemy import text
+from connection import engine
+
+# ————— Configuración —————
+BASE_URL    = 'https://elpatronimport.mitiendanube.com/'
+HEADERS     = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+ASSETS_ROOT = 'product_assets'
+ASSETS_DIR  = os.path.join(ASSETS_ROOT, 'elpatron')
+PROVIDER    = 'elpatron'
+
+os.makedirs(ASSETS_DIR, exist_ok=True)
+
+# ————— Auxiliares —————
+
+def sanitize_filename(name: str) -> str:
+    return re.sub(r'[\\/*?:"<>|]', '', name).strip().replace(' ', '_')
+
+
+def get_or_create_category(provider: str, name: str, url: str) -> int:
+    """
+    Inserta en categories si no existe y devuelve el id.
+    """
+    insert_stmt = text(
+        "INSERT INTO categories(provider, name, url)"
+        " VALUES(:provider, :name, :url)"
+        " ON DUPLICATE KEY UPDATE url = VALUES(url)"
+    )
+    select_stmt = text(
+        "SELECT id FROM categories"
+        " WHERE provider = :provider AND name = :name"
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            insert_stmt,
+            {'provider': provider, 'name': name, 'url': url}
+        )
+        result = conn.execute(
+            select_stmt,
+            {'provider': provider, 'name': name}
+        )
+        row = result.first()
+        return row.id
+
+
+def fetch_categories() -> list[dict]:
+    resp = requests.get(BASE_URL, headers=HEADERS)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, 'html.parser')
+    menu = soup.find('ul', class_='megamenu-list')
+    categorias = []
+    if menu:
+        for a in menu.select('a.nav-list-link.desktop-nav-link.position-relative'):
+            nombre = a.get_text(strip=True)
+            href = a.get('href','').strip()
+            if not href or href == '#' or 'javascript:' in href:
+                continue
+            url = href if '://' in href else urljoin(BASE_URL, href)
+            categorias.append({'nombre': nombre, 'url': url})
+    return categorias
+
+
+def fetch_products_for_category(category_url: str) -> list[dict]:
+    # Import internas para Selenium
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from webdriver_manager.chrome import ChromeDriverManager
+
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--log-level=3")
+    driver = webdriver.Chrome(
+        ChromeDriverManager().install(),
+        options=chrome_options
+    )
+    driver.set_window_size(1920, 1080)
+    driver.get(category_url)
+    try:
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "div.js-product-table"))
+        )
+    except:
+        driver.quit()
+        return []
+    # Scroll y carga
+    for _ in range(12):
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(1)
+    while True:
+        try:
+            btn = driver.find_element(By.CSS_SELECTOR, ".js-load-more-btn")
+            btn.click(); time.sleep(1)
+        except:
+            break
+    # Parse HTML
+    soup = BeautifulSoup(driver.page_source, 'html.parser')
+    driver.quit()
+    cont = soup.select_one("div.js-product-table")
+    if not cont:
+        return []
+    items = cont.select("div.js-product-item-image-container-private")
+    resultados = []
+    for it in items:
+        a = it.find('a')
+        if not a or not a.get('href'):
+            continue
+        link   = urljoin(BASE_URL, a['href'])
+        nombre = a.get('title') or a.get_text(strip=True)
+        resultados.append({'nombre': nombre, 'link': link})
+    return resultados
+
+
+def save_scraped_product(provider: str, provider_sku: str, category_id: int, payload: dict) -> None:
+    stmt = text(
+        "INSERT INTO scraped_products(provider, provider_sku, category_id, fetched_at, data)"
+        " VALUES(:provider, :sku, :cat_id, :fetched_at, :data_json)"
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            stmt,
+            {
+                'provider':   provider,
+                'sku':        provider_sku,
+                'cat_id':     category_id,
+                'fetched_at': datetime.utcnow(),
+                'data_json':  json.dumps(payload, ensure_ascii=False)
+            }
+        )
+
+
+def update_assets_for_category(category_name: str) -> None:
+    cats = fetch_categories()
+    match = next((c for c in cats if c['nombre'] == category_name), None)
+    if not match:
+        raise ValueError(f"Categoría '{category_name}' no encontrada")
+    # Registrar categoría en BD
+    category_id = get_or_create_category(
+        PROVIDER, category_name, match['url']
+    )
+    productos = fetch_products_for_category(match['url'])
+    for p in productos:
+        nombre = p['nombre']
+        link   = p['link']
+        # Detalle
+        resp = requests.get(link, headers=HEADERS, timeout=10)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        # Descripción
+        desc_el = soup.select_one(
+            '.description.product-description-desktop.visible-when-content-ready'
+        )
+        descripcion = desc_el.get_text(separator='\n', strip=True) if desc_el else ''
+        # Imágenes
+        imgs = soup.select('.js-swiper-product-thumbnails img') or soup.select('img.js-product-slide-img')
+        image_paths = []
+        for img in imgs:
+            src = img.get('data-src') or img.get('src')
+            if not src:
+                continue
+            url = urljoin(BASE_URL, src)
+            fname = sanitize_filename(nombre) + '_' + os.path.basename(urlparse(src).path)
+            local_path = os.path.join(ASSETS_DIR, fname)
+            if not os.path.exists(local_path):
+                data = requests.get(url, headers=HEADERS).content
+                with open(local_path, 'wb') as f:
+                    f.write(data)
+                time.sleep(0.2)
+            image_paths.append(local_path)
+        # Guardar en DB
+        sku = sanitize_filename(nombre)
+        payload = {
+            'nombre':      nombre,
+            'descripcion': descripcion,
+            'images':      image_paths
+        }
+        save_scraped_product(PROVIDER, sku, category_id, payload)
+        time.sleep(0.5)
+
+
+# ————— Ejecución manual —————
+if __name__ == '__main__':
+    update_assets_for_category('Todos')  # Ajusta el nombre según categoría existente
