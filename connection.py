@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 # URL de conexión: usuario, contraseña, host, puerto y base de datos
 DATABASE_URL = (
-    "mysql+pymysql://fullsetadmin:fullsetadmin@localhost:3306/fullset_db?charset=utf8mb4"
+    "mysql+pymysql://fullset:fullset@localhost:3306/fullset_db?charset=utf8mb4"
 )
 
 # Crear el engine de SQLAlchemy
