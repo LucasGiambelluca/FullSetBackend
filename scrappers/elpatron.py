@@ -70,61 +70,75 @@ def fetch_categories() -> list[dict]:
             categorias.append({'nombre': nombre, 'url': url})
     return categorias
 
-
 def fetch_products_for_category(category_url: str) -> list[dict]:
-    # Import internas para Selenium
+    # Selenium 4 — usar Service y options (sin posicionales)
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.chrome.service import Service
+
+    opts = Options()
+    # headless moderno (más estable)
+    opts.add_argument("--headless=new")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--log-level=3")
+    opts.add_argument("--window-size=1920,1080")
+    # opcional: user-agent consistente
+    opts.add_argument(f"--user-agent={HEADERS['User-Agent']}")
+
+    # Si tenés chromedriver del sistema:
+    # service = Service("/usr/bin/chromedriver")
+    # driver = webdriver.Chrome(service=service, options=opts)
+
+    # Usar Selenium Manager (recomendado; no pasar ejecutable posicional):
+    driver = webdriver.Chrome(options=opts)
+
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
-    from webdriver_manager.chrome import ChromeDriverManager
 
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--log-level=3")
-    driver = webdriver.Chrome(
-        ChromeDriverManager().install(),
-        options=chrome_options
-    )
-    driver.set_window_size(1920, 1080)
     driver.get(category_url)
     try:
-        WebDriverWait(driver, 15).until(
+        WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "div.js-product-table"))
         )
-    except:
+    except Exception:
         driver.quit()
         return []
-    # Scroll y carga
+
+    # Scroll/carga
     for _ in range(12):
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(1)
+
     while True:
         try:
             btn = driver.find_element(By.CSS_SELECTOR, ".js-load-more-btn")
-            btn.click(); time.sleep(1)
-        except:
+            btn.click()
+            time.sleep(1)
+        except Exception:
             break
+
     # Parse HTML
-    soup = BeautifulSoup(driver.page_source, 'html.parser')
+    html = driver.page_source
     driver.quit()
+
+    soup = BeautifulSoup(html, 'html.parser')
     cont = soup.select_one("div.js-product-table")
     if not cont:
         return []
+
     items = cont.select("div.js-product-item-image-container-private")
     resultados = []
     for it in items:
         a = it.find('a')
         if not a or not a.get('href'):
             continue
-        link   = urljoin(BASE_URL, a['href'])
+        link = urljoin(BASE_URL, a['href'])
         nombre = a.get('title') or a.get_text(strip=True)
         resultados.append({'nombre': nombre, 'link': link})
     return resultados
-
 
 def save_scraped_product(provider: str, provider_sku: str, category_id: int, payload: dict) -> None:
     stmt = text(
