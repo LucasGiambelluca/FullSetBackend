@@ -1,5 +1,6 @@
 # scrapers/touche.py
 # Actualizado: maneja categorías en BD, guarda provider y category_id
+# Compatibilidad Selenium 4: usa Selenium Manager (sin webdriver_manager)
 
 import os
 import re
@@ -19,7 +20,8 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
+# 👇 NO usamos webdriver_manager en Selenium 4 (Selenium Manager resuelve el driver)
+# from webdriver_manager.chrome import ChromeDriverManager
 
 # ————— Configuración —————
 PROVIDER    = 'touche'
@@ -33,6 +35,10 @@ os.makedirs(ASSETS_DIR, exist_ok=True)
 
 def sanitize_filename(name: str) -> str:
     return re.sub(r'[\\/*?:"<>|]', '', name).strip().replace(' ', '_')
+
+def _norm(s: str) -> str:
+    """Normaliza strings para comparación (insensible a mayúsculas/espacios)."""
+    return (s or "").strip().casefold()
 
 def get_or_create_category(provider: str, name: str, url: str) -> int:
     """
@@ -59,6 +65,7 @@ def fetch_categories() -> list[dict]:
     r = requests.get(BASE_URL, headers=HEADERS)
     r.raise_for_status()
     soup = BeautifulSoup(r.text, 'html.parser')
+    # Ajustá el selector si cambia el sitio
     menu = soup.find('ul', class_='desktop-list-subitems')
     categorias = []
     if menu:
@@ -73,38 +80,68 @@ def fetch_categories() -> list[dict]:
 
 # ————— Productos por categoría —————
 
+def _new_chrome_driver() -> webdriver.Chrome:
+    """
+    Crea un Chrome headless compatible con Selenium 4 (Selenium Manager).
+    No pasa argumentos posicionales (evita TypeError en __init__).
+    """
+    opts = Options()
+    # Headless moderno en Chrome
+    opts.add_argument("--headless=new")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--log-level=3")
+    opts.add_argument("--window-size=1920,1080")
+    # Alinear user-agent con requests
+    ua = HEADERS.get('User-Agent')
+    if ua:
+        opts.add_argument(f"--user-agent={ua}")
+    # Si querés forzar binario (no suele hacer falta):
+    # opts.binary_location = "/usr/bin/google-chrome-stable"
+
+    # ✅ Selenium Manager resuelve el driver automáticamente
+    return webdriver.Chrome(options=opts)
+
 def fetch_products_for_category(category_url: str) -> list[dict]:
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--log-level=3")
-    driver = webdriver.Chrome(
-        ChromeDriverManager().install(), options=chrome_options
-    )
-    driver.set_window_size(1920, 1080)
-    driver.get(category_url)
-    time.sleep(2)
-    # Scroll inicial
-    for _ in range(12):
-        driver.execute_script("window.scrollBy(0, document.body.scrollHeight);")
-        time.sleep(0.5)
-    # Load more
-    while True:
+    driver = _new_chrome_driver()
+    try:
+        driver.get(category_url)
+
+        # Esperar el contenedor de productos
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "div.js-product-table"))
+        )
+
+        # Scroll inicial para cargar
+        for _ in range(12):
+            driver.execute_script("window.scrollBy(0, document.body.scrollHeight);")
+            time.sleep(0.5)
+
+        # Cargar más (si existe botón)
+        while True:
+            try:
+                btn = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, ".js-load-more-btn"))
+                )
+                btn.click()
+                time.sleep(1)
+            except Exception:
+                break
+
+        html = driver.page_source
+    finally:
+        # Asegura cierre aunque falle algo
         try:
-            btn = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, ".js-load-more-btn"))
-            )
-            btn.click()
-            time.sleep(1)
-        except:
-            break
-    soup = BeautifulSoup(driver.page_source, 'html.parser')
-    driver.quit()
+            driver.quit()
+        except Exception:
+            pass
+
+    soup = BeautifulSoup(html, 'html.parser')
     cont = soup.find('div', class_='js-product-table')
     if not cont:
         return []
+
     items = cont.select('div.js-product-item-image-container-private')
     resultados = []
     for it in items:
@@ -139,25 +176,34 @@ def save_scraped_product(provider: str, provider_sku: str, category_id: int, pay
 
 def update_assets_for_category(category_name: str) -> None:
     cats = fetch_categories()
-    match = next((c for c in cats if c['nombre'] == category_name), None)
+
+    # match tolerante por nombre de categoría
+    wanted = _norm(category_name)
+    match = next((c for c in cats if _norm(c['nombre']) == wanted), None)
     if not match:
         raise ValueError(f"Categoría '{category_name}' no encontrada")
+
     # Registrar categoría y obtener ID
-    category_id = get_or_create_category(PROVIDER, category_name, match['url'])
+    category_id = get_or_create_category(PROVIDER, match['nombre'], match['url'])
+
     productos = fetch_products_for_category(match['url'])
     for p in productos:
         nombre = p['nombre']
         link   = p['link']
+
         # Detalle del producto
-        resp = requests.get(link, headers=HEADERS, timeout=10)
+        resp = requests.get(link, headers=HEADERS, timeout=15)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, 'html.parser')
+
         # Descripción principal
         desc_el = soup.select_one('.description.product-description')
         descripcion = desc_el.get_text('\n', strip=True) if desc_el else ''
+
         # Variaciones
         vars_el = soup.select('a.js-insta-variant.btn-variant-color')
         variaciones = [a['data-option'] for a in vars_el if a.has_attr('data-option')]
+
         # Imágenes de alta resolución
         thumbs = soup.select('.js-swiper-product-thumbnails img') or soup.select('img.js-product-slide-img')
         image_paths = []
@@ -165,17 +211,22 @@ def update_assets_for_category(category_name: str) -> None:
             src = img.get('data-src') or img.get('src')
             if not src:
                 continue
+            # intentar subir a 1024x1024 si viene con sufijo WxH
             if '-1024-1024' not in src:
                 src = re.sub(r'-(\d+)-(\d+)(\.\w+)$', r'-1024-1024\3', src)
             url = src if src.startswith('http') else urljoin(BASE_URL, src)
+
             fname = sanitize_filename(nombre) + '_' + os.path.basename(urlparse(url).path)
             local_path = os.path.join(ASSETS_DIR, fname)
+
             if not os.path.exists(local_path):
-                data = requests.get(url, headers=HEADERS).content
+                data = requests.get(url, headers=HEADERS, timeout=20).content
                 with open(local_path, 'wb') as f:
                     f.write(data)
-                time.sleep(0.2)
+                time.sleep(0.2)  # leve backoff para no golpear el sitio
+
             image_paths.append(local_path)
+
         # Insertar en BD
         sku = sanitize_filename(nombre)
         payload = {
@@ -189,4 +240,5 @@ def update_assets_for_category(category_name: str) -> None:
 
 # ————— Ejecución manual —————
 if __name__ == '__main__':
-    update_assets_for_category('Ropa')  # Ajusta el nombre según categoría existente
+    # Ajustá el nombre según categoría existente (ver fetch_categories())
+    update_assets_for_category('Ropa')
