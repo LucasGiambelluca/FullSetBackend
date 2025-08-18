@@ -71,32 +71,27 @@ def fetch_categories() -> list[dict]:
     return categorias
 
 def fetch_products_for_category(category_url: str) -> list[dict]:
-    # Selenium 4 — usar Service y options (sin posicionales)
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
 
     opts = Options()
-    # headless moderno (más estable)
     opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--log-level=3")
     opts.add_argument("--window-size=1920,1080")
-    # opcional: user-agent consistente
     opts.add_argument(f"--user-agent={HEADERS['User-Agent']}")
 
-    # Si tenés chromedriver del sistema:
-    # service = Service("/usr/bin/chromedriver")
-    # driver = webdriver.Chrome(service=service, options=opts)
+    # Si querés forzar binario (no suele hacer falta):
+    # opts.binary_location = "/usr/bin/google-chrome-stable"
 
-    # Usar Selenium Manager (recomendado; no pasar ejecutable posicional):
+    # ✅ Selenium Manager (no pasar argumentos posicionales)
     driver = webdriver.Chrome(options=opts)
-
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
 
     driver.get(category_url)
     try:
@@ -107,7 +102,6 @@ def fetch_products_for_category(category_url: str) -> list[dict]:
         driver.quit()
         return []
 
-    # Scroll/carga
     for _ in range(12):
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(1)
@@ -120,7 +114,6 @@ def fetch_products_for_category(category_url: str) -> list[dict]:
         except Exception:
             break
 
-    # Parse HTML
     html = driver.page_source
     driver.quit()
 
