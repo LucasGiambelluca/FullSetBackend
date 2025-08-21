@@ -70,13 +70,16 @@ def fetch_categories() -> list[dict]:
             categorias.append({'nombre': nombre, 'url': url})
     return categorias
 
-def fetch_products_for_category(category_url: str) -> list[dict]:
+def fetch_products_for_category(category_url):
     from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.chrome.service import Service
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.chrome.options import Options
+    import tempfile
+    import time
+    from bs4 import BeautifulSoup
+    import requests
+
+    service = Service("/usr/local/bin/chromedriver")
 
     opts = Options()
     opts.add_argument("--headless=new")
@@ -87,51 +90,34 @@ def fetch_products_for_category(category_url: str) -> list[dict]:
     opts.add_argument("--window-size=1920,1080")
     opts.add_argument(f"--user-agent={HEADERS['User-Agent']}")
 
-    # Si querés forzar binario (no suele hacer falta):
-    # opts.binary_location = "/usr/bin/google-chrome-stable"
+    # Fix para el error de session not created
+    opts.add_argument(f"--user-data-dir={tempfile.mkdtemp()}")
+    opts.add_argument("--remote-debugging-port=0")
 
-    # ✅ Selenium Manager (no pasar argumentos posicionales)
-    driver = webdriver.Chrome(options=opts)
+    driver = webdriver.Chrome(service=service, options=opts)
 
     driver.get(category_url)
-    try:
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "div.js-product-table"))
-        )
-    except Exception:
-        driver.quit()
-        return []
+    time.sleep(3)
 
-    for _ in range(12):
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(1)
-
-    while True:
-        try:
-            btn = driver.find_element(By.CSS_SELECTOR, ".js-load-more-btn")
-            btn.click()
-            time.sleep(1)
-        except Exception:
-            break
-
-    html = driver.page_source
+    soup = BeautifulSoup(driver.page_source, "html.parser")
     driver.quit()
 
-    soup = BeautifulSoup(html, 'html.parser')
-    cont = soup.select_one("div.js-product-table")
-    if not cont:
-        return []
-
-    items = cont.select("div.js-product-item-image-container-private")
-    resultados = []
-    for it in items:
-        a = it.find('a')
-        if not a or not a.get('href'):
+    productos = []
+    for product in soup.select(".product"):
+        try:
+            name = product.select_one(".product-name").get_text(strip=True)
+            price = product.select_one(".price").get_text(strip=True)
+            link = product.select_one("a")["href"]
+            productos.append({
+                "name": name,
+                "price": price,
+                "link": link
+            })
+        except Exception as e:
+            print(f"Error procesando producto: {e}")
             continue
-        link = urljoin(BASE_URL, a['href'])
-        nombre = a.get('title') or a.get_text(strip=True)
-        resultados.append({'nombre': nombre, 'link': link})
-    return resultados
+
+    return productos
 
 def save_scraped_product(provider: str, provider_sku: str, category_id: int, payload: dict) -> None:
     stmt = text(
