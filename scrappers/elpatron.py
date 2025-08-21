@@ -30,33 +30,27 @@ os.makedirs(ASSETS_DIR, exist_ok=True)
 # ————— Auxiliares —————
 
 def get_driver():
-    """
-    Devuelve un Chrome WebDriver configurado para headless en servidor.
-    Usa google-chrome y chromedriver instalados en el sistema.
-    """
+    from selenium import webdriver
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.chrome.options import Options
+    import shutil
+
     opts = Options()
+    opts.binary_location = "/usr/bin/google-chrome"
     opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--remote-debugging-port=9222")
     opts.add_argument("--window-size=1920,1080")
-    opts.add_argument(f"--user-agent={HEADERS['User-Agent']}")
 
-    chrome_path = shutil.which("google-chrome")
     driver_path = shutil.which("chromedriver")
-
-    if not chrome_path:
-        raise Exception("❌ google-chrome no encontrado en PATH")
     if not driver_path:
         raise Exception("❌ chromedriver no encontrado en PATH")
 
-    print(f"[get_driver] Usando chrome en: {chrome_path}")
-    print(f"[get_driver] Usando chromedriver en: {driver_path}")
-
     service = Service(driver_path)
-    return webdriver.Chrome(service=service, options=opts)
 
+    return webdriver.Chrome(service=service, options=opts)
 
 def sanitize_filename(name: str) -> str:
     return re.sub(r'[\\/*?:"<>|]', '', name).strip().replace(' ', '_')
