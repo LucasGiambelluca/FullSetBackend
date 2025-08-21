@@ -24,6 +24,28 @@ os.makedirs(ASSETS_DIR, exist_ok=True)
 
 # ————— Auxiliares —————
 
+import tempfile
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+
+def get_driver():
+    opts = webdriver.ChromeOptions()
+    opts.add_argument("--headless=new")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+
+    # ✅ usar un directorio temporal único para cada sesión
+    user_data_dir = tempfile.mkdtemp()
+    opts.add_argument(f"--user-data-dir={user_data_dir}")
+
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=opts)
+    return driver
+
+
+
+
 def sanitize_filename(name: str) -> str:
     return re.sub(r'[\\/*?:"<>|]', '', name).strip().replace(' ', '_')
 
@@ -135,7 +157,7 @@ def fetch_products_for_category(category_url):
     opts.add_argument("--window-size=1920,1080")
     opts.add_argument(f"--user-agent={HEADERS['User-Agent']}")
 
-    driver = webdriver.Chrome(service=service, options=opts)
+    driver = get_driver()
 
     try:
         driver.get(category_url)
