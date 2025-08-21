@@ -70,6 +70,53 @@ def fetch_categories() -> list[dict]:
             categorias.append({'nombre': nombre, 'url': url})
     return categorias
 
+""" def fetch_products_for_category(category_url):
+    from selenium import webdriver
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.chrome.options import Options
+    from bs4 import BeautifulSoup
+    import time
+
+    service = Service("/usr/local/bin/chromedriver")
+
+    opts = Options()
+    opts.add_argument("--headless=new")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--log-level=3")
+    opts.add_argument("--window-size=1920,1080")
+    opts.add_argument(f"--user-agent={HEADERS['User-Agent']}")
+
+    driver = webdriver.Chrome(service=service, options=opts)
+
+    try:
+        driver.get(category_url)
+        time.sleep(3)
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+
+        productos = []
+        for product in soup.select(".product"):
+            try:
+                name = product.select_one(".product-name").get_text(strip=True)
+                price = product.select_one(".price").get_text(strip=True)
+                link = product.select_one("a")["href"]
+                productos.append({
+                    "name": name,
+                    "price": price,
+                    "link": link
+                })
+            except Exception as e:
+                print(f"Error procesando producto: {e}")
+                continue
+
+        return productos
+    finally:
+        driver.quit()
+ """
+
+
+
 def fetch_products_for_category(category_url):
     from selenium import webdriver
     from selenium.webdriver.chrome.service import Service
