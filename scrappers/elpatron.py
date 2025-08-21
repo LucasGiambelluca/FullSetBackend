@@ -1,10 +1,11 @@
-# scrapers/elpatron.py
+# scrappers/elpatron.py
 # Actualizado: maneja categorías en BD, guarda provider y category_id
 
 import os
 import re
 import json
 import time
+import shutil
 import requests
 from datetime import datetime
 from urllib.parse import urljoin, urlparse
@@ -12,7 +13,7 @@ from bs4 import BeautifulSoup
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.options import Options
 
 from sqlalchemy import text
 from connection import engine
@@ -28,30 +29,33 @@ os.makedirs(ASSETS_DIR, exist_ok=True)
 
 # ————— Auxiliares —————
 
-import tempfile
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-
 def get_driver():
-    from selenium import webdriver
-    from selenium.webdriver.chrome.service import Service
-    from selenium.webdriver.chrome.options import Options
-    import shutil
-
+    """
+    Devuelve un Chrome WebDriver configurado para headless en servidor.
+    Usa google-chrome y chromedriver instalados en el sistema.
+    """
     opts = Options()
-    opts.add_argument("--headless")
+    opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--remote-debugging-port=9222")
+    opts.add_argument("--window-size=1920,1080")
+    opts.add_argument(f"--user-agent={HEADERS['User-Agent']}")
 
     chrome_path = shutil.which("google-chrome")
     driver_path = shutil.which("chromedriver")
+
+    if not chrome_path:
+        raise Exception("❌ google-chrome no encontrado en PATH")
+    if not driver_path:
+        raise Exception("❌ chromedriver no encontrado en PATH")
+
+    print(f"[get_driver] Usando chrome en: {chrome_path}")
+    print(f"[get_driver] Usando chromedriver en: {driver_path}")
+
     service = Service(driver_path)
-
     return webdriver.Chrome(service=service, options=opts)
-
 
 
 def sanitize_filename(name: str) -> str:
@@ -100,73 +104,12 @@ def fetch_categories() -> list[dict]:
             categorias.append({'nombre': nombre, 'url': url})
     return categorias
 
-""" def fetch_products_for_category(category_url):
-    from selenium import webdriver
-    from selenium.webdriver.chrome.service import Service
-    from selenium.webdriver.chrome.options import Options
-    from bs4 import BeautifulSoup
-    import time
-
-    service = Service("/usr/local/bin/chromedriver")
-
-    opts = Options()
-    opts.add_argument("--headless=new")
-    opts.add_argument("--no-sandbox")
-    opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("--disable-gpu")
-    opts.add_argument("--log-level=3")
-    opts.add_argument("--window-size=1920,1080")
-    opts.add_argument(f"--user-agent={HEADERS['User-Agent']}")
-
-    driver = webdriver.Chrome(service=service, options=opts)
-
-    try:
-        driver.get(category_url)
-        time.sleep(3)
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-
-        productos = []
-        for product in soup.select(".product"):
-            try:
-                name = product.select_one(".product-name").get_text(strip=True)
-                price = product.select_one(".price").get_text(strip=True)
-                link = product.select_one("a")["href"]
-                productos.append({
-                    "name": name,
-                    "price": price,
-                    "link": link
-                })
-            except Exception as e:
-                print(f"Error procesando producto: {e}")
-                continue
-
-        return productos
-    finally:
-        driver.quit()
- """
-
-
 
 def fetch_products_for_category(category_url):
-    from selenium import webdriver
-    from selenium.webdriver.chrome.service import Service
-    from selenium.webdriver.chrome.options import Options
-    from bs4 import BeautifulSoup
-    import time
-
-    service = Service("/usr/local/bin/chromedriver")
-
-    opts = Options()
-    opts.add_argument("--headless=new")
-    opts.add_argument("--no-sandbox")
-    opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("--disable-gpu")
-    opts.add_argument("--log-level=3")
-    opts.add_argument("--window-size=1920,1080")
-    opts.add_argument(f"--user-agent={HEADERS['User-Agent']}")
-
+    """
+    Usa Selenium para obtener los productos de una categoría.
+    """
     driver = get_driver()
-
     try:
         driver.get(category_url)
         time.sleep(3)
@@ -179,12 +122,12 @@ def fetch_products_for_category(category_url):
                 price = product.select_one(".price").get_text(strip=True)
                 link = product.select_one("a")["href"]
                 productos.append({
-                    "name": name,
-                    "price": price,
+                    "nombre": name,
+                    "precio": price,
                     "link": link
                 })
             except Exception as e:
-                print(f"Error procesando producto: {e}")
+                print(f"⚠️ Error procesando producto: {e}")
                 continue
 
         return productos
