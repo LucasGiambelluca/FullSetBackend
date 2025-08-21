@@ -75,7 +75,7 @@ def fetch_products_for_category(category_url):
     from selenium.webdriver.chrome.service import Service
     from selenium.webdriver.chrome.options import Options
     from bs4 import BeautifulSoup
-    import tempfile, uuid, time
+    import time
 
     service = Service("/usr/local/bin/chromedriver")
 
@@ -88,17 +88,13 @@ def fetch_products_for_category(category_url):
     opts.add_argument("--window-size=1920,1080")
     opts.add_argument(f"--user-agent={HEADERS['User-Agent']}")
 
-    # Genera un user-data-dir único por proceso
-    temp_profile = tempfile.mkdtemp(prefix=f"chrome_profile_{uuid.uuid4().hex}_")
-    opts.add_argument(f"--user-data-dir={temp_profile}")
-
     driver = webdriver.Chrome(service=service, options=opts)
 
     try:
         driver.get(category_url)
         time.sleep(3)
-
         soup = BeautifulSoup(driver.page_source, "html.parser")
+
         productos = []
         for product in soup.select(".product"):
             try:
@@ -113,10 +109,10 @@ def fetch_products_for_category(category_url):
             except Exception as e:
                 print(f"Error procesando producto: {e}")
                 continue
+
         return productos
     finally:
         driver.quit()
-
 
 
 def save_scraped_product(provider: str, provider_sku: str, category_id: int, payload: dict) -> None:
