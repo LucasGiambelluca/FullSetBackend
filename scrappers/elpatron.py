@@ -34,19 +34,23 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 def get_driver():
-    opts = webdriver.ChromeOptions()
-    opts.add_argument("--headless=new")
+    from selenium import webdriver
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.chrome.options import Options
+    import shutil
+
+    opts = Options()
+    opts.add_argument("--headless")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--remote-debugging-port=9222")
 
-    # ✅ usar un directorio temporal único para cada sesión
-    user_data_dir = tempfile.mkdtemp()
-    opts.add_argument(f"--user-data-dir={user_data_dir}")
+    chrome_path = shutil.which("google-chrome")
+    driver_path = shutil.which("chromedriver")
+    service = Service(driver_path)
 
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=opts)
-    return driver
-
+    return webdriver.Chrome(service=service, options=opts)
 
 
 
