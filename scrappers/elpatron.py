@@ -31,26 +31,18 @@ os.makedirs(ASSETS_DIR, exist_ok=True)
 
 
 # ————— Auxiliares —————
-
 def get_driver():
-    """
-    Inicializa un ChromeDriver headless con un perfil temporal único.
-    Así evitamos colisiones cuando hay múltiples workers.
-    """
     opts = Options()
     opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
 
-    # Generar un perfil único temporal
-    user_data_dir = tempfile.mkdtemp(prefix=f"chrome-{uuid.uuid4().hex}-")
-    opts.add_argument(f"--user-data-dir={user_data_dir}")
+    # ❌ No uses user-data-dir en producción (causa colisiones con systemd)
+    # user_data_dir = tempfile.mkdtemp(prefix=f"chrome-{uuid.uuid4().hex}-")
+    # opts.add_argument(f"--user-data-dir={user_data_dir}")
 
     service = Service("/srv/api/FullSetBackend/chromedriver-linux64/chromedriver")
     driver = webdriver.Chrome(service=service, options=opts)
-
-    # Adjuntar cleanup automático
-    driver._user_data_dir = user_data_dir
     return driver
 
 
