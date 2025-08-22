@@ -37,13 +37,12 @@ def get_driver():
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
 
-    # ❌ No uses user-data-dir en producción (causa colisiones con systemd)
-    # user_data_dir = tempfile.mkdtemp(prefix=f"chrome-{uuid.uuid4().hex}-")
-    # opts.add_argument(f"--user-data-dir={user_data_dir}")
+    # ✅ Genera un directorio único por cada instancia
+    user_data_dir = tempfile.mkdtemp(prefix=f"chrome-{uuid.uuid4().hex}-")
+    opts.add_argument(f"--user-data-dir={user_data_dir}")
 
     service = Service("/srv/api/FullSetBackend/chromedriver-linux64/chromedriver")
-    driver = webdriver.Chrome(service=service, options=opts)
-    return driver
+    return webdriver.Chrome(service=service, options=opts)
 
 
 def quit_driver(driver):
