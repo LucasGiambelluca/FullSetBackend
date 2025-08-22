@@ -33,7 +33,7 @@ os.makedirs(ASSETS_DIR, exist_ok=True)
 def get_driver():
     from selenium.webdriver.chrome.service import Service
     from selenium.webdriver.chrome.options import Options
-    import tempfile
+    import tempfile, shutil
 
     opts = Options()
     opts.add_argument("--headless=new")
@@ -44,12 +44,13 @@ def get_driver():
     opts.add_argument("--window-size=1920,1080")
     opts.add_argument(f"--user-agent={HEADERS['User-Agent']}")
 
-    # 🟢 usar un directorio temporal único para el perfil
-    tmp_profile = tempfile.mkdtemp()
+    # ✅ crear un directorio temporal único para evitar conflicto de perfiles
+    tmp_profile = tempfile.mkdtemp(prefix="chrome-profile-")
     opts.add_argument(f"--user-data-dir={tmp_profile}")
 
     service = Service("/usr/local/bin/chromedriver")  # ruta fija
-    return webdriver.Chrome(service=service, options=opts)
+    driver = webdriver.Chrome(service=service, options=opts)
+    return driver
 
 
 def sanitize_filename(name: str) -> str:
