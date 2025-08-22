@@ -29,28 +29,28 @@ os.makedirs(ASSETS_DIR, exist_ok=True)
 
 # ————— Auxiliares —————
 
+
 def get_driver():
-    from selenium import webdriver
     from selenium.webdriver.chrome.service import Service
     from selenium.webdriver.chrome.options import Options
-    import shutil
+    import tempfile
 
     opts = Options()
-    opts.binary_location = "/usr/bin/google-chrome"
     opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
-    opts.add_argument("--remote-debugging-port=9222")
+    opts.add_argument("--log-level=3")
     opts.add_argument("--window-size=1920,1080")
+    opts.add_argument(f"--user-agent={HEADERS['User-Agent']}")
 
-    driver_path = shutil.which("chromedriver") or "/usr/local/bin/chromedriver"
-    if not os.path.exists(driver_path):
-        raise Exception(f"❌ chromedriver no encontrado en {driver_path}")
+    # 🟢 usar un directorio temporal único para el perfil
+    tmp_profile = tempfile.mkdtemp()
+    opts.add_argument(f"--user-data-dir={tmp_profile}")
 
-    service = Service(driver_path)
-
+    service = Service("/usr/local/bin/chromedriver")  # ruta fija
     return webdriver.Chrome(service=service, options=opts)
+
 
 def sanitize_filename(name: str) -> str:
     return re.sub(r'[\\/*?:"<>|]', '', name).strip().replace(' ', '_')
