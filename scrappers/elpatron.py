@@ -44,9 +44,9 @@ def get_driver():
     opts.add_argument("--remote-debugging-port=9222")
     opts.add_argument("--window-size=1920,1080")
 
-    driver_path = shutil.which("chromedriver")
-    if not driver_path:
-        raise Exception("❌ chromedriver no encontrado en PATH")
+    driver_path = shutil.which("chromedriver") or "/usr/local/bin/chromedriver"
+    if not os.path.exists(driver_path):
+        raise Exception(f"❌ chromedriver no encontrado en {driver_path}")
 
     service = Service(driver_path)
 
