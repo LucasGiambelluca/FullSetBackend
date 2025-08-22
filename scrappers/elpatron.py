@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+import tempfile, uuid
 
 from sqlalchemy import text
 from connection import engine
@@ -31,24 +32,16 @@ os.makedirs(ASSETS_DIR, exist_ok=True)
 
 
 def get_driver():
-    from selenium.webdriver.chrome.service import Service
-    from selenium.webdriver.chrome.options import Options
-    import tempfile, shutil
-
     opts = Options()
     opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("--disable-gpu")
-    opts.add_argument("--log-level=3")
-    opts.add_argument("--window-size=1920,1080")
-    opts.add_argument(f"--user-agent={HEADERS['User-Agent']}")
 
-    # ✅ crear un directorio temporal único para evitar conflicto de perfiles
-    tmp_profile = tempfile.mkdtemp(prefix="chrome-profile-")
-    """ opts.add_argument(f"--user-data-dir={tmp_profile}") """
+    # 🚑 Genera un perfil único temporal para evitar colisiones
+    user_data_dir = tempfile.mkdtemp(prefix=f"chrome-{uuid.uuid4().hex}-")
+    opts.add_argument(f"--user-data-dir={user_data_dir}")
 
-    service = Service("/usr/local/bin/chromedriver")  # ruta fija
+    service = Service("/srv/api/FullSetBackend/chromedriver-linux64/chromedriver")
     driver = webdriver.Chrome(service=service, options=opts)
     return driver
 
