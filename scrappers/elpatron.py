@@ -36,15 +36,10 @@ def get_driver():
     opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
-
-    # ✅ Genera un directorio único por cada instancia
-    user_data_dir = tempfile.mkdtemp(prefix=f"chrome-{uuid.uuid4().hex}-")
-    opts.add_argument(f"--user-data-dir={user_data_dir}")
+    # 👇 Nada de --user-data-dir
 
     service = Service("/srv/api/FullSetBackend/chromedriver-linux64/chromedriver")
     return webdriver.Chrome(service=service, options=opts)
-
-
 def quit_driver(driver):
     """Cierra Chrome y limpia el perfil temporal."""
     try:
