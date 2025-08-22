@@ -46,7 +46,7 @@ def get_driver():
 
     # ✅ crear un directorio temporal único para evitar conflicto de perfiles
     tmp_profile = tempfile.mkdtemp(prefix="chrome-profile-")
-    opts.add_argument(f"--user-data-dir={tmp_profile}")
+    """ opts.add_argument(f"--user-data-dir={tmp_profile}") """
 
     service = Service("/usr/local/bin/chromedriver")  # ruta fija
     driver = webdriver.Chrome(service=service, options=opts)
